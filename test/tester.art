@@ -1,13 +1,13 @@
 import ./"../src/api.art"!
 
 ; Initialize client with API key
-claude: to :claudeAPI @[arg\0]!
+ollama: to :ollamaAPI []!
 
 ; Simple query
-response: claude\chat @[
+response: ollama\chat @[
     createMessage "user" "What is 2+2?"
 ]
 
 inspect response
 
-print claude\ask "Can you explain to me what an LLM is?"
+print ollama\ask .numPredict: 20 "Can you explain to me what an LLM is?"
