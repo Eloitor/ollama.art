@@ -1,14 +1,17 @@
 ;===============================================
-; Claude.ai.art
+; Ollama.art
 ;
-; Claude API wrapper
+; Ollama API wrapper
 ; for Arturo
 ;
 ; MIT License
 ; (c) 2024 Yanis Zafirópulos
+; (c) 2024 Eloi Torrents
 ;==========================================================
 ; @file: src/api.art
 ;==========================================================
+
+import 'recase!
 
 ;--------------------------
 ; Type Definitions 
@@ -19,8 +22,8 @@ define :message [
         \role: role
         \content: content
 
-        if not? in? \role ["user" "assistant"] ->
-            throw.as: valueError "Message role must be 'user' or 'assistant'"
+        if not? in? \role ["system" "user" "assistant" "tool"] ->
+            throw.as: valueError "Message role must be 'system', 'user', 'assistant' or 'tool'"
     ]
 ]
 
@@ -38,82 +41,116 @@ createMessage: function [role :string content :string][
 ; Main implementation
 ;--------------------------
 
-define :claudeAPI [
-    init: method [key :string][
-        if null? key [ 
-            throw.as: valueError "API key is required"
-        ]
-        if not? prefix? key "sk-" [
-            throw.as: valueError "Invalid API key format - must start with 'sk-'"
-        ]
-
-        \apiKey: key
-        \baseUrl: "https://api.anthropic.com"
-        \apiVersion: "2023-06-01"
-        \model: "claude-3-sonnet-20240229"
-        \maxTokens: 4096
-
-        ; default parameters
-        \defaultTemp: 0.7
-        \defaultTopP: 1.0
+define :ollamaAPI [
+    init: method [][
+        \host: (attr 'host) ?? "http://localhost:11434"
+        \model: "llama3.2"
+        if null? request \host ø
+            -> panic "Ollama is not running!"
     ]
 
     chat: method [blk :block][
-        ;; description: « Send a chat request to Claude's API
+        ;; description: « Send a chat request to Ollama's API
         ;; options: [
-        ;;     model: :string « specify Claude model to use (default: claude-3-sonnet)
-        ;;     system: :string « specify system message
-        ;;     temperature: :floating « set temperature (0.0-1.0)
-        ;;     maxTokens: :integer « set max tokens for response
-        ;;     topP: :floating « set top_p value (0.0-1.0)
-        ;;     topK: :integer « set top_k value
+        ;;     model: :string « specify the model to use (e.g., llama3.2)
+        ;;     numKeep: :integer « number of tokens to retain from the initial prompt
+        ;;     seed: :integer « sets the random number seed to use for generation. Setting this to a specific number will make the model generate the same text for the same prompt. (Default: 0)
+        ;;     numPredict: :integer « maximum number of tokens to predict when generating text. (Default: 128, -1 = infinite generation, -2 = fill context)
+        ;;     topK: :integer « reduces the probability of generating nonsense. A higher value (e.g. 100) will give more diverse answers, while a lower value (e.g. 10) will be more conservative. (Default: 40)
+        ;;     topP: :floating « works together with top-k. A higher value (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text. (Default: 0.9)
+        ;;     minP: :floating « alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out. (Default: 0.0)
+        ;;     tfsZ: :floating « tail free sampling is used to reduce the impact of less probable tokens from the output. A higher value (e.g., 2.0) will reduce the impact more, while a value of 1.0 disables this setting. (default: 1)
+        ;;     typicalP: :floating « locally typical sampling, parameter p (default: 1.0)
+        ;;     repeatLastN: :integer « sets how far back for the model to look back to prevent repetition. (Default: 64, 0 = disabled, -1 = num_ctx)
+        ;;     temperature: :floating « the temperature of the model. Increasing the temperature will make the model answer more creatively. (Default: 0.8)
+        ;;     repeatPenalty: :floating « sets how strongly to penalize repetitions. A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9) will be more lenient. (Default: 1.1)
+        ;;     presencePenalty: :floating « penalize tokens already present (default: 0.0)
+        ;;     frequencyPenalty: :floating « penalize frequent tokens (default: 0.0)
+        ;;     mirostat: :integer « enable Mirostat sampling for controlling perplexity. (default: 0, 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0)
+        ;;     mirostatEta: :floating « influences how quickly the algorithm responds to feedback from the generated text. A lower learning rate will result in slower adjustments, while a higher learning rate will make the algorithm more responsive. (Default: 0.1)
+        ;;     mirostatTau: :floating « controls the balance between coherence and diversity of the output. A lower value will result in more focused and coherent text. (Default: 5.0)
+        ;;     penalizeNewline: :boolean « penalize generation of newline tokens (default: true)
+        ;;     stop: [:string] « sets the stop sequences to use. When this pattern is encountered the LLM will stop generating text and return.  (e.g., ["\n", "user:"])
+        ;;     numa: :boolean « enable NUMA optimization (default: false)
+        ;;     numCtx: :integer « sets the size of the context window used to generate the next token. (Default: 2048)
+        ;;     numBatch: :integer « number of tokens in the prompt that are fed into the model at a time.
+        ;;     numGpu: :integer « number of layers to send to the GPU
+        ;;     mainGpu: :integer « primary GPU index for processing (default: 0)
+        ;;     lowVram: :boolean « optimize for low GPU memory (default: false)
+        ;;     vocabOnly: :boolean « limit operations to vocabulary-related tasks (default: false)
+        ;;     useMmap: :boolean « use memory-mapped files for data access (default: true)
+        ;;     useMlock: :boolean « lock model in RAM to prevent swapping (default: false)
+        ;;     numThread: :integer « number of CPU threads to use (default: system threads)
         ;; ]
         ;; returns: :dictionary
         ;; example: {
-        ;;     claude: to :claudeAPI ["sk-..."]!
-        ;;     result: claude\chat [
+        ;;     ollama: to :ollamaAPI [ø]!
+        ;;     result: ollama\chat [
         ;;         to :message ["user" "What is 2+2?"]
         ;;     ]
         ;;     print result\content
         ;; }
 
+        if null? request \host ø
+            -> panic "Ollama is not running!"
+
         ; Get parameters from attributes or defaults
         model: (attr 'model) ?? \model
+        stream: (attr 'stream) ?? false
         system: attr 'system
-        temperature: (attr 'temperature) ?? \defaultTemp
-        maxTokens: (attr 'maxTokens) ?? \maxTokens
-        topP: (attr 'topP) ?? \defaultTopP
-        topK: attr 'topK
 
         messages: @ blk
         ensure -> is? [:message] messages
+
+        options: #.raw flatten select map to [:string] [
+            numKeep
+            seed
+            numPredict
+            topK
+            topP
+            minP
+            tfsZ
+            typicalP
+            repeatLastN
+            temperature
+            repeatPenalty
+            presencePenalty
+            frequencyPenalty
+            mirostat
+            mirostatEta
+            mirostatTau
+            penalizeNewline
+            stop
+            numa
+            numCtx
+            numBatch
+            numGpu
+            mainGpu
+            lowVram
+            vocabOnly
+            useMmap
+            useMlock
+            numThread
+        ] 
+            'at -> @[recase.snake at attr at] 
+            'p -> not? null? last p
 
         ; Build request body
         body: #[
             model: model
             messages: messages
-            max_tokens: maxTokens
-            temperature: temperature
-            top_p: topP
+            stream: stream
+            options: options
         ]
 
         if not? null? system [
             set body 'system system
         ]
 
-        if not? null? topK [
-            set body 'top_k topK
-        ]
-
         ; Make API request
         result: request.post 
             .json
-            .headers: #[
-                "x-api-key": \apiKey
-                "anthropic-version": \apiVersion
-                "content-type": "application/json"
-            ]
-            \baseUrl ++ "/v1/messages"
+            \host ++ "/api/chat"
             body
 
         if result\status <> 200 [
@@ -128,11 +165,11 @@ define :claudeAPI [
     ]
 
     ask: method [question :string][
-        ;; description: « Ask question directly to Claude API and get answer
+        ;; description: « Ask question directly to Ollama API and get answer
         ;; returns: :string
         ;; example: {
-        ;;     claude: to :claudeAPI ["sk-..."]!
-        ;;     result: claude\chat [
+        ;;     ollama: to :ollamaAPI [ø]!
+        ;;     result: ollama\chat [
         ;;         to :message ["user" "What is 2+2?"]
         ;;     ]
         ;;     print result\content
@@ -141,40 +178,23 @@ define :claudeAPI [
             createMessage "user" question
         ]
 
-        unless key? response 'content ->
+        ; inspect response
+
+        unless key? response 'message ->
             throw "Something went wrong"
 
-        content: first response\content
+        message: response\message
 
-        unless key? content 'type ->
+        unless key? message 'content ->
             throw "Something went wrong"
 
-        unless content\type = "text" ->
-            throw "Non-text response generated"
+        content: message\content
 
-        unless key? content 'text ->
-            throw "Something went wrong"
-
-        return content\text
+        return content
     ]
 
     setModel: method [model :string][
         ;; description: « Set default model
         \model: model
-    ]
-
-    setMaxTokens: method [tokens :integer][
-        ;; description: « Set default max tokens
-        \maxTokens: tokens
-    ]
-
-    setTemperature: method [temp :floating][
-        ;; description: « Set default temperature
-        \defaultTemp: temp
-    ]
-
-    setTopP: method [topP :floating][
-        ;; description: « Set default top_p
-        \defaultTopP: topP
     ]
 ]
