@@ -3,11 +3,15 @@ import ./"../src/api.art"!
 ; Initialize client with API key
 ollama: to :ollamaAPI []!
 
+
 ; Simple query
 response: ollama\chat @[
     createMessage "user" "What is 2+2?"
 ]
-
 inspect response
 
-print ollama\ask .numPredict: 20 "Can you explain to me what an LLM is?"
+print ollama\ask "Can you explain to me what an LLM is?"
+
+; Text embedding
+ollama\embeddings "Arturo is a programming language" | get 'embedding | first.n: 10 | print
+

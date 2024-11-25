@@ -27,6 +27,17 @@ define :message [
     ]
 ]
 
+define :embedding [
+    init: constructor [response][
+        unless key? response 'version ->
+            throw "Something went wrong"
+        \version: to :version response\version
+        unless key? response 'body ->
+            throw "Something went wrong"
+        \embedding: get response 'body
+    ]
+]
+
 ;--------------------------
 ; Helper Functions
 ;--------------------------
@@ -169,16 +180,12 @@ define :ollamaAPI [
         ;; returns: :string
         ;; example: {
         ;;     ollama: to :ollamaAPI [ø]!
-        ;;     result: ollama\chat [
-        ;;         to :message ["user" "What is 2+2?"]
-        ;;     ]
-        ;;     print result\content
+        ;;     print ollama\ask "What is the capital of Sweden?"
+        ;;     ; The capital of Sweden is Stockholm.
         ;; }
         response: \chat [
             createMessage "user" question
         ]
-
-        ; inspect response
 
         unless key? response 'message ->
             throw "Something went wrong"
@@ -191,6 +198,36 @@ define :ollamaAPI [
         content: message\content
 
         return content
+    ]
+
+    embeddings: method [prompt :string][
+        ;; description: « Embed text into a vector space
+        ;; returns: [:floating]
+        ;; example: {
+        ;;     ollama: to :ollamaAPI [ø]!
+        ;;     result: ollama\embedngs "Arturo is a programming language"
+        ;;     print result\content
+        ;; }
+
+        if null? request \host ø
+            -> panic "Ollama is not running!"
+
+        ; Get parameters from attributes or defaults
+        model: (attr 'model) ?? \model
+
+        ; Build request body
+        body: #[
+            model: model
+            prompt: prompt
+        ]
+
+        ; Make API request
+        response: request.post 
+            .json
+            \host ++ "/api/embeddings"
+            body
+        emb: to :embedding @[response]!
+        return emb
     ]
 
     setModel: method [model :string][
