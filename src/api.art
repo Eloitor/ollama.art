@@ -1,4 +1,4 @@
-;===============================================
+===============================================
 ; Ollama.art
 ;
 ; Ollama API wrapper
@@ -18,7 +18,7 @@ import 'recase!
 ;--------------------------
 
 define :message [
-    init: constructor [role :string content :string][
+    init: method [role :string content :string][
         \role: role
         \content: content
 
@@ -28,13 +28,13 @@ define :message [
 ]
 
 define :embedding [
-    init: constructor [response][
+    init: method [response][
         unless key? response 'version ->
             throw "Something went wrong"
-        \version: to :version response\version
+        \version: response\version
         unless key? response 'body ->
             throw "Something went wrong"
-        \embedding: get response 'body
+        \embedding: get read.json get response 'body 'embedding
     ]
 ]
 
@@ -64,6 +64,8 @@ define :ollamaAPI [
         ;; description: « Send a chat request to Ollama's API
         ;; options: [
         ;;     model: :string « specify the model to use (e.g., llama3.2)
+        ;;     system: :string « system instuctions
+        ;;     tools: [:string] « descriptions of available tools
         ;;     numKeep: :integer « number of tokens to retain from the initial prompt
         ;;     seed: :integer « sets the random number seed to use for generation. Setting this to a specific number will make the model generate the same text for the same prompt. (Default: 0)
         ;;     numPredict: :integer « maximum number of tokens to predict when generating text. (Default: 128, -1 = infinite generation, -2 = fill context)
@@ -109,6 +111,7 @@ define :ollamaAPI [
         model: (attr 'model) ?? \model
         stream: (attr 'stream) ?? false
         system: attr 'system
+        tools: attr 'tools
 
         messages: @ blk
         ensure -> is? [:message] messages
@@ -152,6 +155,7 @@ define :ollamaAPI [
             messages: messages
             stream: stream
             options: options
+            tools: tools
         ]
 
         if not? null? system [
@@ -183,21 +187,50 @@ define :ollamaAPI [
         ;;     print ollama\ask "What is the capital of Sweden?"
         ;;     ; The capital of Sweden is Stockholm.
         ;; }
-        response: \chat [
+        
+        at: flatten.once map attrs [k v] [to :block render.once ".|k|:@|as.code v|" ]
+        do at ; restore attributes
+        
+        messages: [
             createMessage "user" question
         ]
 
-        unless key? response 'message ->
-            throw "Something went wrong"
+        until [
+            response: \chat messages
 
-        message: response\message
+            unless key? response 'message ->
+                throw "Something went wrong"
 
-        unless key? message 'content ->
-            throw "Something went wrong"
+            message: response\message
 
-        content: message\content
+            unless key? message 'content ->
+                throw "Something went wrong"
 
-        return content
+            if key? message 'tool_calls [
+                if one? size message\tool_calls [
+                    if "nop" = message\tool_calls\[0]\function\name [
+                        ; remove the .tools: attr and call \chat again
+                        do at ; restore attributes
+                        discard: attr 'tools
+                        continue
+                    ] 
+                ]
+                loop message\tool_calls 't [
+                    inspect t\function
+                    toolInfo: to :string t\function
+                    toolAns: input "Provide info to the LLM: "
+                    'messages ++ [
+                        createMessage "tool" toolInfo ++ toolAns
+                    ]
+                ]
+                ; proccess each tool, append the messages and call chat again.
+                ; remove the .tools: attr and call \chat again
+                do at ; restore attributes
+                discard: attr 'tools
+                continue
+            ]
+        ] [not? key? message 'tool_calls]
+        return message\content
     ]
 
     embeddings: method [prompt :string][
@@ -226,8 +259,7 @@ define :ollamaAPI [
             .json
             \host ++ "/api/embeddings"
             body
-        emb: to :embedding @[response]!
-        return emb
+        return to :embedding @[response]
     ]
 
     setModel: method [model :string][

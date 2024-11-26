@@ -1,14 +1,44 @@
-import ./"../src/api.art"!
+import ./"../src/api.art"
+import ./"../src/vec.art"!
 
 ; Initialize client with API key
 ollama: to :ollamaAPI []!
-
 
 ; Simple query
 response: ollama\chat @[
     createMessage "user" "What is 2+2?"
 ]
 inspect response
+
+weatherTool: #[  type: "function",
+          function: #[
+            name: "get_current_weather"
+            description: "Get the current weather for a city, not a country"
+            parameters: #[
+              type: "object",
+              properties: #[
+                city: #[
+                  type: "string",
+                  description: "The name of the city"
+                ]
+              ]
+              required: ["city"],
+            ]
+          ]
+]
+nop: #[  type: "function",
+          function: #[
+            name: "nop"
+            description: "This tool does nothing. Use it when you do not need to run any tool."
+            parameters: #[]
+          ]
+]
+
+question: "Do I need a jacket to go see the Eiffel Tower?"
+print question
+print color #green wordwrap ollama\ask .tools: @[weatherTool nop] question
+
+inspect ollama\ask .tools: @[nop] "What is 2+2"
 
 print ollama\ask "Can you explain to me what an LLM is?"
 

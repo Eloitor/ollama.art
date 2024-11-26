@@ -1,0 +1,7 @@
+vectorLength: function [v] [ 
+	sqrt sum map v 'x [x * x] 
+]
+
+vectorDistance: function [u v] [
+	sqrt sum map.with: 'i u 'x [(x - v\[i])^2]
+]
